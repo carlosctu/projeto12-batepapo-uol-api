@@ -17,11 +17,11 @@ mongoClient.connect().then(() => (db = mongoClient.db("test")));
 
 //#region Schemas
 const participantSchema = joi.object({
-  name: joi.string().empty("").required(),
+  name: joi.string().required(),
 });
 const messageSchema = joi.object({
-  to: joi.string().empty("").required(),
-  text: joi.string().empty("").required(),
+  to: joi.string().required(),
+  text: joi.string().required(),
   type: joi.string().valid("message", "private_message").required(),
 });
 //#endregion
@@ -34,7 +34,7 @@ app.post("/participants", async (req, res) => {
     .collection("messages")
     .estimatedDocumentCount();
   //#region FastFail
-  if (validation.error) return res.status(422);
+  if (validation.error) return res.sendStatus(422);
   const userExists = await db
     .collection("participants")
     .findOne({ name: name });
@@ -102,14 +102,19 @@ app.post("/messages", async (req, res) => {
 app.get("/messages", async (req, res) => {
   const { limit } = req.query;
   const name = req.get("User") ?? "";
+  console.log(name);
 
   //#region Getting data from messages collection
   try {
-    const userMessages = await db
+    const messages = await db
       .collection("messages")
-      .find({ from: name })
-      .sort({ messageId: -1 })
+      .find()
+      .sort({ messageId: 1 })
       .toArray();
+    const userMessages = messages.filter(
+      (message) => message.to === name || message.to === "Todos"
+    );
+    console.log(userMessages);
     const messageLimit = limit ? parseInt(limit, 10) : userMessages.length;
     return res.status(200).send(userMessages.splice(messageLimit * -1));
   } catch (error) {
