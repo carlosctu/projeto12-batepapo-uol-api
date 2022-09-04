@@ -3,7 +3,7 @@ import dayjs from "dayjs";
 import express from "express";
 import joi from "joi";
 import dotenv from "dotenv";
-import { MongoClient } from "mongodb";
+import { MongoClient, ObjectId } from "mongodb";
 
 //#region Backend Configuration
 const app = express();
@@ -72,7 +72,7 @@ app.get("/participants", async (req, res) => {
   //#endregion
 });
 app.post("/messages", async (req, res) => {
-  const name = req.get("user") ?? "";
+  const name = req.get("User") ?? "";
   const userExists = await db
     .collection("participants")
     .findOne({ name: name });
@@ -102,7 +102,6 @@ app.post("/messages", async (req, res) => {
 app.get("/messages", async (req, res) => {
   const { limit } = req.query;
   const name = req.get("User") ?? "";
-  console.log(name);
 
   //#region Getting data from messages collection
   try {
@@ -114,7 +113,6 @@ app.get("/messages", async (req, res) => {
     const userMessages = messages.filter(
       (message) => message.to === name || message.to === "Todos"
     );
-    console.log(userMessages);
     const messageLimit = limit ? parseInt(limit, 10) : userMessages.length;
     return res.status(200).send(userMessages.splice(messageLimit * -1));
   } catch (error) {
@@ -127,27 +125,84 @@ app.post("/status", async (req, res) => {
   const userExists = await db
     .collection("participants")
     .findOne({ name: name });
-  const updateDoc = {
-    $set: {
-      lastStatus: Date.now(),
-    },
-  };
+  console.log(userExists);
   //#region FastFail
   if (!userExists) return res.sendStatus(404);
   //#endregion
 
   //#region Updating data from Participants Collections
   try {
+    const updateDoc = {
+      $set: {
+        lastStatus: Date.now(),
+      },
+    };
     await db
       .collection("participants")
-      .updateOne({ lastStatus: userExists.lastStatus }, updateDoc);
+      .updateOne({ name: name, lastStatus: userExists.lastStatus }, updateDoc);
     return res.sendStatus(200);
   } catch (error) {
     console.log(error);
   }
   //#endregion
 });
-//#endregion
+//#region Bonus
+app.delete("/messages/:messageId", async (req, res) => {
+  const name = req.get("User") ?? "";
+  const { messageId } = req.params;
+
+  //#region Deleting user message
+  try {
+    const deletedMessage = await db
+      .collection("messages")
+      .deleteOne({ _id: ObjectId(messageId), from: name });
+    return deletedMessage.deletedCount === 0
+      ? res.sendStatus(401)
+      : res.sendStatus(204);
+  } catch (error) {
+    console.log(error);
+  }
+  res.sendStatus(404);
+  //#endregion
+});
+app.put("/messages/:messageId", async (req, res) => {
+  const name = req.get("User") ?? "";
+  const { to, text, type } = req.body;
+  const validation = messageSchema.validate(req.body);
+  const { messageId } = req.params;
+  const userExists = await db
+    .collection("participants")
+    .findOne({ name: name });
+  //#region Fastfail
+  if (!userExists) return res.sendStatus(422);
+  if (validation.error || !userExists)
+    return res.status(422).send(validation.error.message);
+  //#endregion
+
+  //#region updating user message
+  try {
+    const updateDoc = {
+      $set: {
+        to: to,
+        text: text,
+        type: type,
+      },
+    };
+    const updatedMessage = await db
+      .collection("messages")
+      .updateOne({ _id: ObjectId(messageId), from: name }, updateDoc);
+    updatedMessage.matchedCount === 0
+      ? res.sendStatus(404)
+      : res.sendStatus(200);
+  } catch (error) {
+    console.log(error);
+  }
+  //#endregion
+});
+
+//#endregion Bonus
+
+//#endregion Endpoints
 
 //#region Removing inactive participants
 async function removeInactiveUsers() {
